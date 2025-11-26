@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<pnml xmlns="http://www.pnml.org/version-2009/grammar/pnml">
+  <net id="12580780-93c8-49c6-ab1d-6e911e79e996"
+       type="http://www.pnml.org/version-2009/grammar/ptnet">
+
+    <name>
+      <text>undefined</text>
+    </name>
+
+    <page id="b1a07758-4649-47ab-b7bc-8a5b814e59a4">
+
+      <!-- ================== PLACES ================== -->
+
+      <place id="P1">
+        <name><text>P1</text></name>
+        <graphics>
+          <position x="235" y="145"/>
+        </graphics>
+        <initialMarking>
+          <text>1</text>
+        </initialMarking>
+      </place>
+
+      <place id="P2">
+        <name><text>P2</text></name>
+        <graphics>
+          <position x="145" y="325"/>
+        </graphics>
+      </place>
+
+      <place id="P3">
+        <name><text>P3</text></name>
+        <graphics>
+          <position x="235" y="325"/>
+        </graphics>
+      </place>
+
+      <place id="P4">
+        <name><text>P4</text></name>
+        <graphics>
+          <position x="310" y="500"/>
+        </graphics>
+      </place>
+
+      <!-- ================= TRANSITIONS =============== -->
+
+      <transition id="T1">
+        <name><text>T1</text></name>
+        <graphics>
+          <position x="145" y="235"/>
+        </graphics>
+      </transition>
+
+      <transition id="T2">
+        <name><text>T2</text></name>
+        <graphics>
+          <position x="235" y="235"/>
+        </graphics>
+      </transition>
+
+      <transition id="T3">
+        <name><text>T3</text></name>
+        <graphics>
+          <position x="235" y="415"/>
+        </graphics>
+      </transition>
+
+      <!-- =================== ARCS ==================== -->
+
+      <arc id="P1_T1" source="P1" target="T1">
+        <graphics>
+          <position x="145" y="190"/>
+        </graphics>
+      </arc>
+
+      <arc id="P1_T2" source="P1" target="T2"/>
+
+      <arc id="T1_P2" source="T1" target="P2"/>
+
+      <arc id="T2_P3" source="T2" target="P3"/>
+
+      <arc id="P2_T3" source="P2" target="T3">
+        <graphics>
+          <position x="145" y="370"/>
+        </graphics>
+      </arc>
+
+      <arc id="P3_T3" source="P3" target="T3"/>
+
+      <arc id="T3_P4" source="T3" target="P4"/>
+
+    </page>
+  </net>
+</pnml>
