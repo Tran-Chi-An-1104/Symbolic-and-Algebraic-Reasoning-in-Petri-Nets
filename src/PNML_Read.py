@@ -1,220 +1,145 @@
 import xml.etree.ElementTree as ET
-import queue
+from collections import deque
 
-# PNML namespace
 PNML_NS = "{http://www.pnml.org/version-2009/grammar/pnml}"
 
-#==============================================FUNCTION TO PARSE PNML FILE====================================#
+
 def parse_pnml(filename):
+    """
+    Parse a 1-safe Petri net in PNML format.
+
+    Returns:
+        places_dict: dict[place_id] = initial_tokens (int)
+        transitions: list[{"name": str, "inputs": [place_id], "outputs": [place_id]}]
+        arcs: list[(source_id, target_id)]
+        initial_marking_list: list[place_id] with initial token > 0
+    """
     tree = ET.parse(filename)
-    root = tree.getroot()               #root is <pnml>
+    root = tree.getroot()
 
-    # Internal data structures
-    places = {}          # place_id -> initial tokens
-    transitions = set()  # set of transition ids
-    arcs = []            # list of (source, target)
+    places_dict = {}         # place_id -> initial tokens
+    transition_ids = set()   # set of transition ids
+    arcs = []                # (source, target)
 
-    # Parse PLACES
     for p in root.findall(".//" + PNML_NS + "place"):
         pid = p.attrib["id"]
-
-        # Reading token
-        marking_node = p.find(".//" + PNML_NS + "initialMarking/" + PNML_NS + "text")      
+        marking_node = p.find(
+            ".//" + PNML_NS + "initialMarking/" + PNML_NS + "text"
+        )
         marking = int(marking_node.text) if marking_node is not None else 0
-        places[pid] = marking
+        places_dict[pid] = marking
 
-    # Parse TRANSITIONS
     for t in root.findall(".//" + PNML_NS + "transition"):
         tid = t.attrib["id"]
-        transitions.add(tid)
+        transition_ids.add(tid)
 
-    # Parse ARCS
     for a in root.findall(".//" + PNML_NS + "arc"):
         src = a.attrib["source"]
         tgt = a.attrib["target"]
         arcs.append((src, tgt))
-    
 
-    return places, transitions, arcs
-#=========================================END OF PNML PARSE====================================#
+    node_ids = set(places_dict.keys()) | transition_ids
+    for src, tgt in arcs:
+        if src not in node_ids or tgt not in node_ids:
+            raise ValueError(
+                f"Inconsistent PNML: arc {src} -> {tgt} references unknown node."
+            )
 
+    pre = {tid: [] for tid in transition_ids}
+    post = {tid: [] for tid in transition_ids}
 
+    for src, tgt in arcs:
+        if src in places_dict and tgt in transition_ids:
+            pre[tgt].append(src)
+        elif src in transition_ids and tgt in places_dict:
+            post[src].append(tgt)
 
+    transitions = []
+    for tid in sorted(transition_ids):
+        transitions.append(
+            {
+                "name": tid,
+                "inputs": pre[tid],
+                "outputs": post[tid],
+            }
+        )
 
+    initial_marking_list = [p for p, m in places_dict.items() if m > 0]
 
-
-
-
-#========================================BREADTH FIRST SEARCH=================================
-
-#Convert arc into pre and post input/output form
-def Transition_Input_Output(places, transitions, arcs):
-    #pre = { "T1": [], "T2": [], "T3": [], ... }    -    Get input of arcs
-    pre = {}
-    for transition_id in transitions:
-        pre[transition_id] = []
-
-    #post = { "T1": [], "T2": [], "T3": [], ... }   -    Get output of arcs
-    post = {}
-    for transition_id in transitions:
-        post[transition_id] = []
-
-
-    for arc in arcs:
-        source = arc[0]
-        target = arc[1]
-
-        #If arc is: place -> transition
-        if (source in places) and (target in transitions):
-            pre[target].append(source)
-        #If arc is: transition -> place
-        elif (source in transitions) and (target in places):
-            post[source].append(target)
+    return places_dict, transitions, arcs, initial_marking_list
 
 
-    return pre, post
+def bfs_reachable_markings(places_dict, transitions):
+    """
+    Explicit BFS reachability for 1-safe Petri net.
 
+    places_dict: dict[place_id] -> initial_tokens (>=0)
+                 (treated as 0/1 in 1-safe assumption)
+    transitions: list of dicts with 'inputs', 'outputs'
 
-#Check if all input of transition contain 1 token
-def is_enabled_to_fire (transition, marking, pre):
-    for place in pre[transition]:
-        if marking[place] == 0:                     #Token = 0
-            return False
-        
-    return True
+    Returns:
+        reachable: set of tuple marks (ordered by place_order)
+        place_order: list of place_ids (sorted)
+    """
+    place_order = sorted(places_dict.keys())
+    place_index = {p: i for i, p in enumerate(place_order)}
 
+    initial_marking = tuple(
+        1 if places_dict[p] > 0 else 0 for p in place_order
+    )
 
-#Fire from a transition, produce new marking token
-def fire_transition (transition, marking, pre, post):
-    new_marking = marking.copy()
+    def is_enabled(marking, trans):
+        for p in trans["inputs"]:
+            if marking[place_index[p]] == 0:
+                return False
+        return True
 
-    #remove token from old Place
-    for p in pre[transition]:
-        new_marking[p] = 0
+    def fire(marking, trans):
+        m = list(marking)
+        for p in trans["inputs"]:
+            i = place_index[p]
+            m[i] = 0  
+        for p in trans["outputs"]:
+            i = place_index[p]
+            m[i] = 1    
+        return tuple(m)
 
-    #add token to new Place
-    for p in post[transition]:
-        new_marking[p] = 1
+    visited = set([initial_marking])
+    reachable = set([initial_marking])
+    q = deque([initial_marking])
 
-    return new_marking
-
-
-
-#BFS To find all reachable marking
-def bfs_reachable_markings(places, transitions, arcs):
-
-    pre, post = Transition_Input_Output(places, transitions, arcs)
-
-    #Ordered list of place 
-    place_id_list = []
-    for place_id in places:
-        place_id_list.append(place_id)
-
-    place_id_list.sort()     
-
-
-    #Intial marking token
-    initial_marking_list = []
-    for place_id in place_id_list:
-        initial_marking_list.append(places[place_id])
-    
-    initial_marking_tuple = tuple(initial_marking_list)      #Inital token is: (P1: 0, P2: 0, P3: 0, P4: 0, P5: 1, P6: 0)
-
-
-
-    #Initialize visited and queue
-    visited = set()
-    visited.add(initial_marking_tuple)
-
-    reachable = []
-    reachable.append(initial_marking_tuple)
-
-    bfs_queue = queue.Queue()
-    bfs_queue.put(initial_marking_tuple)
-
-    #BFS
-    while not bfs_queue.empty():
-        current_marking_tuple = bfs_queue.get() 
-
-        current_marking_dict = {}
-        index_value = 0
-
-        for place_id in place_id_list:
-            current_marking_dict[place_id] = current_marking_tuple[index_value]
-            index_value += 1
-
-
-        #Check all transition
-        for transition in transitions:
-            #Check if transition is enabled to fire token
-            transition_enabled = is_enabled_to_fire(transition, current_marking_dict, pre)
-            
-            if transition_enabled is False:
+    while q:
+        current = q.popleft()
+        for t in transitions:
+            if not is_enabled(current, t):
                 continue
+            new_m = fire(current, t)
+            if new_m not in visited:
+                visited.add(new_m)
+                reachable.add(new_m)
+                q.append(new_m)
 
-            #Fire transition to get new marking token
-            new_marking_dict = fire_transition(transition, current_marking_dict, pre, post)
-
-
-            new_marking_list = []
-            for place_id in place_id_list:
-                new_marking_list.append(new_marking_dict[place_id])
-            
-            new_marking_tuple = tuple(new_marking_list)
-
-            if new_marking_tuple not in visited:
-                visited.add(new_marking_tuple)
-                reachable.append(new_marking_tuple)
-                bfs_queue.put(new_marking_tuple)
-
-    return reachable, place_id_list
+    return reachable, place_order
 
 
-#============================END OF BREADTH FIRST SEARCH=============================#
-        
+if __name__ == "__main__":
+    filename = "PetriNetSample.pnml"
 
+    places_dict, transitions, arcs, initial_marking_list = parse_pnml(filename)
 
-places, transitions, arcs = parse_pnml("PetriNetSample.pnml")
+    print("Places (initial tokens):")
+    for p, m in places_dict.items():
+        print(f"  {p}: {m}")
 
-print("\nPLACES:")
-for p, m in places.items():
-    print(f"  {p}: {m} token")
+    print("\nTransitions:")
+    for t in transitions:
+        print(f"  {t['name']}: inputs={t['inputs']}, outputs={t['outputs']}")
 
-print("\nTRANSITIONS:")
-for t in transitions:
-    print("  ", t)
+    print("\nArcs:")
+    for s, t in arcs:
+        print(f"  {s} -> {t}")
 
-print("\nARCS:")
-for s, t in arcs:
-    print(f"  {s} -> {t}")
-
-
-
-# Places: Dict -> {(place_id: token), ...}
-# Transistion: Set -> (T1, T2, ...)
-# Arc: List -> [(source, target), ...]
-
-print("\n==================Check reachable===================")
-
-reachable, order = bfs_reachable_markings(places, transitions, arcs)
-
-
-reachable_places = set()
-for marking_tuple in reachable:
-
-    index_value = 0
-    for place_id in order:
-
-        token_value = marking_tuple[index_value]
-
-        # If this place has a token in this marking, mark it as reachable
-        if token_value == 1:
-            reachable_places.add(place_id)
-
-        index_value = index_value + 1
-
-
-# Print reachable places
-print("\nReachable Places:")
-for place_id in sorted(reachable_places):
-    print(" ", place_id)
+    reachable, order = bfs_reachable_markings(places_dict, transitions)
+    print("\nReachable markings (explicit BFS):")
+    for m in sorted(reachable):
+        print(dict(zip(order, m)))
